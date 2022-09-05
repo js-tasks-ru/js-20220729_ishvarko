@@ -14,6 +14,44 @@ export default class ProductForm {
     price: 100,
     discount: 0,
   };
+  onDelete = (e) => {
+    if (e.target.dataset.deleteHandle !== undefined) {
+      e.target.closest("li").remove();
+    }
+  };
+  imageUpload = (e) => {
+    e.preventDefault();
+    const imageInput = document.createElement("input");
+    imageInput.type = "file";
+    imageInput.accept = "image/*";
+    imageInput.addEventListener("change", async () => {
+      const [image] = imageInput.files;
+      if (image) {
+        const formData = new FormData();
+        const { imageListContainer } = this.subElements;
+        const uploadImage = this.subElements.productForm.uploadImage;
+        formData.append("image", image);
+        uploadImage.classList.add("is-loading");
+        uploadImage.disabled = true;
+        const result = await fetchJson("https://api.imgur.com/3/image", {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            Authorization: `Cliend-ID ${IMGUR_CLIENT_ID}`,
+          },
+          body: formData,
+          referrer: "",
+        });
+
+        if (result.success === true) {
+          const li = this.renderImage(image.name, result);
+          imageListContainer.append(li);
+        }
+      }
+      imageInput.remove();
+    });
+    imageInput.click();
+  };
   constructor(productId) {
     this.productId = productId;
   }
@@ -28,14 +66,14 @@ export default class ProductForm {
     const productPromise = this.productId
       ? this.getProductData(this.productId)
       : Promise.resolve(this.defaultProductData);
-    const [categories, productData] = await Promise.all([
+    const [categoriesData, productData] = await Promise.all([
       categoriesPromise,
       productPromise,
     ]);
     this.productData = productData;
-    console.log(this.productData);
-    this.insertCategories(categories);
+    this.insertCategories(categoriesData);
     this.insertProductData();
+    this.initializeListeners();
   }
   insertProductData() {
     this.subElements.productForm.title.value = this.productData.title;
@@ -51,7 +89,6 @@ export default class ProductForm {
       Array.isArray(this.productData.images) &&
       this.productData.images.length
     ) {
-      console.log(this.productData.images);
       const html = this.productData.images
         .map((image) => {
           return /*html*/ `
@@ -72,7 +109,6 @@ export default class ProductForm {
     }
   }
   insertCategories(categories) {
-    console.log(this.subElements.productForm);
     categories.forEach((cat) => {
       cat.subcategories.forEach((subCat) => {
         const selected =
@@ -89,19 +125,14 @@ export default class ProductForm {
   }
 
   async getCategories() {
-    const queryUrl = "/api/rest/categories";
-    const url = new URL(queryUrl, BACKEND_URL);
-    url.searchParams.set("_sort", "weight");
-    url.searchParams.set("_refs", "subcategory");
-    const res = await fetch(url);
+    const queryUrl = `${BACKEND_URL}/api/rest/categories?_sort=weight&_refs=subcategory`;
+    const res = await fetch(queryUrl);
     const data = await res.json();
     return data;
   }
   async getProductData(productId) {
-    const queryUrl = "/api/rest/products";
-    const url = new URL(queryUrl, BACKEND_URL);
-    url.searchParams.set("id", productId);
-    const res = await fetch(url);
+    const queryUrl = `${BACKEND_URL}/api/rest/products?id=${productId}`;
+    const res = await fetch(queryUrl);
     const data = await res.json();
     return data[0];
   }
@@ -167,5 +198,45 @@ export default class ProductForm {
       result[name] = subElement;
     }
     return result;
+  }
+  renderImage(imageName, imageLink) {
+    const newImageWrapper = document.createElement("div");
+    newImageWrapper.innerHTML = `
+       <li class="products-edit__imagelist-item sortable-list__item" style="">
+          <input type="hidden" name="url" value="${imageLink}">
+          <input type="hidden" name="source" value="${imageName}">
+          <span>
+        <img src="icon-grab.svg" data-grab-handle="" alt="grab">
+        <img class="sortable-table__cell-img" alt="Image" src="${imageLink}">
+        <span>${imageName}</span>
+      </span>
+          <button type="button">
+            <img src="icon-trash.svg" data-delete-handle="" alt="delete">
+          </button></li>
+          `;
+    const li = newImageWrapper.firstElementChild;
+    return li;
+  }
+  initializeListeners() {
+    this.element.addEventListener("click", this.onDelete);
+    this.subElements.productForm.uploadImage.addEventListener(
+      "click",
+      this.imageUpload
+    );
+    console.log(this.subElements.productForm.uploadImage);
+  }
+  remove() {
+    this.element.removeEventListener("click", this.onDelete);
+    this.subElements.productForm.uploadImage.removeEventListener(
+      "click",
+      this.imageUpload
+    );
+
+    this.element.remove();
+  }
+  destroy() {
+    this.remove();
+    this.element = null;
+    this.subElements = {};
   }
 }
