@@ -19,8 +19,13 @@ export default class ProductForm {
       e.target.closest("li").remove();
     }
   };
+  onSubmit = (event) => {
+    event.preventDefault();
+    this.save();
+  };
   imageUpload = (e) => {
     e.preventDefault();
+    const uploadImage = this.subElements.productForm.uploadImage;
     const imageInput = document.createElement("input");
     imageInput.type = "file";
     imageInput.accept = "image/*";
@@ -29,7 +34,7 @@ export default class ProductForm {
       if (image) {
         const formData = new FormData();
         const { imageListContainer } = this.subElements;
-        const uploadImage = this.subElements.productForm.uploadImage;
+
         formData.append("image", image);
         uploadImage.classList.add("is-loading");
         uploadImage.disabled = true;
@@ -37,18 +42,20 @@ export default class ProductForm {
           method: "POST",
           mode: "cors",
           headers: {
-            Authorization: `Cliend-ID ${IMGUR_CLIENT_ID}`,
+            Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
           },
           body: formData,
-          referrer: "",
+          //referrer: "",
         });
 
         if (result.success === true) {
-          const li = this.renderImage(image.name, result);
+          const li = this.renderImage(image.name, result.data.link);
           imageListContainer.append(li);
         }
       }
       imageInput.remove();
+      uploadImage.classList.remove("is-loading");
+      uploadImage.disabled = false;
     });
     imageInput.click();
   };
@@ -217,16 +224,66 @@ export default class ProductForm {
     const li = newImageWrapper.firstElementChild;
     return li;
   }
+  async save() {
+    const data = this.getFormData();
+    const result = await fetchJson(`${BACKEND_URL}/api/rest/products`, {
+      method: this.productId ? "PATCH" : "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+    this.dispatchEvent(result.id);
+  }
+  getFormData() {
+    const { imageListContainer, productForm } = this.subElements;
+    const excludeFields = ["images"];
+    const fieldsToNumber = ["price", "quantity", "discount", "status"];
+    const fields = Object.keys(this.defaultProductData).filter(
+      (item) => !excludeFields.includes(item)
+    );
+    const getValue = (field) =>
+      productForm.querySelector(`[name=${field}]`).value;
+    const values = {};
+
+    for (const field of fields) {
+      const value = getValue(field);
+      values[field] = fieldsToNumber.includes(field) ? parseInt(value) : value;
+    }
+    const imagesHTML = imageListContainer.querySelectorAll(
+      ".sortable-table__cell-img"
+    );
+    values.images = [];
+    values.id = this.productId;
+
+    for (const image of imagesHTML) {
+      values.images.push({
+        url: image.src,
+        source: image.alt,
+      });
+    }
+    return values;
+  }
   initializeListeners() {
     this.element.addEventListener("click", this.onDelete);
     this.subElements.productForm.uploadImage.addEventListener(
       "click",
       this.imageUpload
     );
-    console.log(this.subElements.productForm.uploadImage);
+    this.subElements.productForm.save.addEventListener("click", this.onSubmit);
+  }
+  dispatchEvent(id) {
+    const event = this.productId
+      ? new CustomEvent("product-updated", { id })
+      : new CustomEvent("product-saved");
+    this.element.dispatchEvent(event);
   }
   remove() {
     this.element.removeEventListener("click", this.onDelete);
+    this.subElements.productForm.save.removeEventListener(
+      "click",
+      this.onSubmit
+    );
     this.subElements.productForm.uploadImage.removeEventListener(
       "click",
       this.imageUpload
